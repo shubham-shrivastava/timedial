@@ -62,6 +62,7 @@ struct TimeConversionService {
     }
     
     /// Format time for display in a specific timezone
+    @MainActor
     static func formatTime(_ date: Date, timezone: TimeZone, style: DateFormatter.Style = .medium) -> String {
         DateFormatterCache.shared.string(from: date, timeZone: timezone, style: style)
     }
