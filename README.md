@@ -29,7 +29,7 @@ A lightweight macOS menu bar app for comparing timezones with beautiful, interac
 
 ## 🎥 Demo
 
-[Watch the demo video](assets/demo.mov)
+<img src="assets/demo.gif" alt="TimeDial demo (GIF)" width="720">
 
 ## 🎮 How to Use
 
