@@ -101,6 +101,10 @@ The archive will be created in `dist/TimeDial-{version}.zip` and can be attached
 Unsigned apps will show a security warning on first launch. Users can:
 - Right-click → Open, or
 - Allow it in **System Settings → Privacy & Security**
+If macOS shows “app is damaged and can’t be opened”, run:
+```bash
+xattr -dr com.apple.quarantine /Applications/TimeDial.app
+```
 
 ## 🧰 Troubleshooting
 - **Menu bar icon missing**: Enable it via **System Settings → Menu Bar → Allow in Menu Bar → TimeDial**.
