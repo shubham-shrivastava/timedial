@@ -1,0 +1,28 @@
+.DS_Store
+.idea/
+.vscode/
+DerivedData/
+.derived/
+build/
+*.xcuserstate
+*.xcuserdata
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.swp
+*.swiftpm
+xcuserdata/
+dist/
+
+# Xcode user-specific files
+project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
