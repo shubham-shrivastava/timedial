@@ -47,10 +47,10 @@ struct ClockConfig: Identifiable, Codable, Equatable, Hashable {
         let minutes = abs(seconds % 3600) / 60
         
         if minutes == 0 {
-            return hours >= 0 ? "UTC+\(hours)" : "UTC\(hours)"
+            return hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
         } else {
             let sign = hours >= 0 ? "+" : "-"
-            return "UTC\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
+            return "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
         }
     }
     
@@ -102,9 +102,11 @@ extension ClockConfig {
         "HKT": "Asia/Hong_Kong",
         "SGT": "Asia/Singapore",
         "GST": "Asia/Dubai",
+        "PET": "America/Lima",
     ]
     
     static func timezoneIdentifier(fromAbbreviation abbr: String) -> String? {
         return abbreviationMap[abbr.uppercased()]
     }
+
 }

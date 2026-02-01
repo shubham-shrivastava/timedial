@@ -28,7 +28,10 @@ class AppState: ObservableObject {
     }
     
     @Published var favoriteTimezones: Set<String> {
-        didSet { saveFavorites() }
+        didSet {
+            saveFavorites()
+            refreshCachedTimezoneGroups()
+        }
     }
     
     @Published var isCompactMode: Bool {
@@ -38,6 +41,7 @@ class AppState: ObservableObject {
     @Published var selectedClockId: UUID?
 
     @Published var isPopoverVisible: Bool = false
+    @Published private(set) var cachedTimezoneGroups: [TimezoneGroup] = []
     
     // MARK: - Constants
     static let maxClocks = 2  // 2 timezone clocks + 1 local = 3 total
@@ -72,6 +76,8 @@ class AppState: ObservableObject {
            let uuid = UUID(uuidString: uuidString) {
             self.selectedClockId = uuid
         }
+
+        refreshCachedTimezoneGroups()
     }
     
     // MARK: - Persistence
@@ -85,6 +91,10 @@ class AppState: ObservableObject {
         if let encoded = try? JSONEncoder().encode(favoriteTimezones) {
             UserDefaults.standard.set(encoded, forKey: Keys.favorites)
         }
+    }
+
+    private func refreshCachedTimezoneGroups() {
+        cachedTimezoneGroups = buildTimezoneGroups(searchQuery: "")
     }
     
     // MARK: - Clock Management
@@ -230,10 +240,10 @@ extension AppState {
         let minutes = abs(seconds % 3600) / 60
         let utcOffset: String
         if minutes == 0 {
-            utcOffset = hours >= 0 ? "UTC+\(hours)" : "UTC\(hours)"
+            utcOffset = hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
         } else {
             let sign = hours >= 0 ? "+" : "-"
-            utcOffset = "UTC\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
+            utcOffset = "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
         }
 
         return TimezoneInfoBase(displayName: displayName, utcOffset: utcOffset)
@@ -251,7 +261,26 @@ extension AppState {
         return cache
     }()
 
-    struct TimezoneGroup: Identifiable {
+    private static let baseTimezoneGroups: [TimezoneGroup] = {
+        var groups: [TimezoneGroup] = []
+        for (regionName, identifiers) in AppState.regionIdentifiers {
+            let infos = identifiers.compactMap { id -> TimezoneInfo? in
+                guard let base = AppState.timezoneInfoCache[id] else { return nil }
+                return TimezoneInfo(
+                    identifier: id,
+                    displayName: base.displayName,
+                    utcOffset: base.utcOffset,
+                    isFavorite: false
+                )
+            }
+            if !infos.isEmpty {
+                groups.append(TimezoneGroup(id: regionName.lowercased(), name: regionName, timezones: infos))
+            }
+        }
+        return groups
+    }()
+
+    struct TimezoneGroup: Identifiable, Equatable {
         let id: String
         let name: String
         let timezones: [TimezoneInfo]
@@ -289,15 +318,19 @@ extension AppState {
             let minutes = abs(seconds % 3600) / 60
             
             if minutes == 0 {
-                self.utcOffset = hours >= 0 ? "UTC+\(hours)" : "UTC\(hours)"
+                self.utcOffset = hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
             } else {
                 let sign = hours >= 0 ? "+" : "-"
-                self.utcOffset = "UTC\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
+                self.utcOffset = "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
             }
         }
     }
     
     func getGroupedTimezones(searchQuery: String = "") -> [TimezoneGroup] {
+        if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return cachedTimezoneGroups
+        }
+
         var groups: [TimezoneGroup] = []
         let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
         
@@ -339,29 +372,52 @@ extension AppState {
         }
         
         // Regional sections
-        for (regionName, identifiers) in AppState.regionIdentifiers {
-            var infos = identifiers.compactMap { id -> TimezoneInfo? in
-                guard let base = AppState.timezoneInfoCache[id] else { return nil }
+        for group in AppState.baseTimezoneGroups {
+            let filtered = group.timezones.filter {
+                $0.displayName.lowercased().contains(query) ||
+                $0.id.lowercased().contains(query)
+            }
+            if !filtered.isEmpty {
+                groups.append(TimezoneGroup(id: group.id, name: group.name, timezones: filtered))
+            }
+        }
+        
+        return groups
+    }
+
+    private func buildTimezoneGroups(searchQuery: String) -> [TimezoneGroup] {
+        var groups: [TimezoneGroup] = []
+        let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
+
+        if !query.isEmpty, let resolvedId = ClockConfig.timezoneIdentifier(fromAbbreviation: query) {
+            if let base = AppState.timezoneInfoCache[resolvedId] ?? AppState.makeTimezoneInfoBase(identifier: resolvedId) {
+                let info = TimezoneInfo(
+                    identifier: resolvedId,
+                    displayName: base.displayName,
+                    utcOffset: base.utcOffset,
+                    isFavorite: isFavorite(resolvedId)
+                )
+                groups.append(TimezoneGroup(id: "quickadd", name: "Quick Add", timezones: [info]))
+            }
+        }
+
+        if !favoriteTimezones.isEmpty {
+            let favInfos = favoriteTimezones.compactMap { id -> TimezoneInfo? in
+                guard let base = AppState.timezoneInfoCache[id] ?? AppState.makeTimezoneInfoBase(identifier: id) else { return nil }
                 return TimezoneInfo(
                     identifier: id,
                     displayName: base.displayName,
                     utcOffset: base.utcOffset,
-                    isFavorite: isFavorite(id)
+                    isFavorite: true
                 )
             }
-            
-            if !query.isEmpty {
-                infos = infos.filter {
-                    $0.displayName.lowercased().contains(query) ||
-                    $0.id.lowercased().contains(query)
-                }
-            }
-            
-            if !infos.isEmpty {
-                groups.append(TimezoneGroup(id: regionName.lowercased(), name: regionName, timezones: infos))
+
+            if !favInfos.isEmpty {
+                groups.append(TimezoneGroup(id: "favorites", name: "Favorites", timezones: favInfos.sorted { $0.displayName < $1.displayName }))
             }
         }
-        
+
+        groups.append(contentsOf: AppState.baseTimezoneGroups)
         return groups
     }
 }
