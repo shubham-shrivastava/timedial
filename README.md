@@ -2,7 +2,7 @@
 
 A lightweight macOS menu bar app for comparing timezones with beautiful, interactive analog clocks.
 
-![TimeDial Menu Bar App](assets/2.png)
+![TimeDial Menu Bar App](assets/1.png)
 
 ## ✨ Features
 
@@ -26,6 +26,10 @@ A lightweight macOS menu bar app for comparing timezones with beautiful, interac
 *Drag clock hands to adjust time across all timezones*
 
 </div>
+
+## 🎥 Demo
+
+[Watch the demo video](assets/demo.mov)
 
 ## 🎮 How to Use
 
@@ -77,6 +81,11 @@ If the icon is hidden, enable it in:
 To start automatically on login:
 **System Settings → Login Items & Extensions** → add TimeDial
 
+### Performance & Memory
+- Idle memory around 70–90 MB is expected.
+- While interacting (opening the timezone list, scrolling, searching), memory may temporarily rise to ~200 MB and then settle after closing.
+- If memory keeps growing while idle, check for duplicate app installs and report an issue.
+
 ## 📦 Creating a Release Build
 
 Use the included packaging script to create a distributable `.zip`:
@@ -92,6 +101,11 @@ The archive will be created in `dist/TimeDial-{version}.zip` and can be attached
 Unsigned apps will show a security warning on first launch. Users can:
 - Right-click → Open, or
 - Allow it in **System Settings → Privacy & Security**
+
+## 🧰 Troubleshooting
+- **Menu bar icon missing**: Enable it via **System Settings → Menu Bar → Allow in Menu Bar → TimeDial**.
+- **App won’t open after download**: Use Right-click → Open once to clear Gatekeeper.
+- **Wrong app launches** (dev machines): Remove older DerivedData builds and reinstall from `/Applications`.
 
 ## 🏗️ Architecture
 
