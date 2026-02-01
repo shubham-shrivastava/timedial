@@ -1,0 +1,44 @@
+name: Build TimeDial
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Release)
+        run: |
+          xcodebuild \
+            -project timedial.xcodeproj \
+            -scheme timedial \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package ZIP
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION =' timedial.xcodeproj/project.pbxproj | sed 's/.*= //; s/;//' | tr -d '"')
+          BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION =' timedial.xcodeproj/project.pbxproj | sed 's/.*= //; s/;//' | tr -d '"')
+          APP="build/Build/Products/Release/TimeDial.app"
+          mkdir -p dist
+          ZIP="dist/TimeDial-${VERSION}-${BUILD}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          echo "Created $ZIP"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TimeDial
+          path: dist/*.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
