@@ -54,8 +54,8 @@ python3 - <<PY
 import re
 path = "timedial.xcodeproj/project.pbxproj"
 data = open(path, "r", encoding="utf-8").read()
-data = re.sub(r"(MARKETING_VERSION = )[^;]+;", r"\\1${MARKETING_VERSION};", data)
-data = re.sub(r"(CURRENT_PROJECT_VERSION = )[^;]+;", r"\\1${BUILD_NUMBER};", data)
+data = re.sub(r"(MARKETING_VERSION = )[^;]+;", r"\\g<1>${MARKETING_VERSION};", data)
+data = re.sub(r"(CURRENT_PROJECT_VERSION = )[^;]+;", r"\\g<1>${BUILD_NUMBER};", data)
 open(path, "w", encoding="utf-8").write(data)
 print("Updated MARKETING_VERSION=${MARKETING_VERSION}")
 print("Updated CURRENT_PROJECT_VERSION=${BUILD_NUMBER}")

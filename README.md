@@ -42,7 +42,7 @@ A lightweight macOS menu bar app for comparing timezones with beautiful, interac
 
 ## 💻 Requirements
 
-- macOS 13.0 or later
+- macOS 14.0 or later
 - Xcode 15+ (for building from source)
 
 ## 🚀 Installation
@@ -56,7 +56,7 @@ A lightweight macOS menu bar app for comparing timezones with beautiful, interac
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/timedial.git
+git clone https://github.com/shubham-shrivastava/timedial.git
 cd timedial
 ```
 
@@ -78,8 +78,9 @@ If the icon is hidden, enable it in:
 **System Settings → Menu Bar → Allow in Menu Bar → TimeDial** (toggle on)
 
 ### Launch at Login
-To start automatically on login:
-**System Settings → Login Items & Extensions** → add TimeDial
+You can toggle this in the app under **Settings → Launch at Login**.
+If you prefer System Settings:
+**System Settings → General → Login Items** → add TimeDial
 
 ### Performance & Memory
 - Idle memory around 70–90 MB is expected.
@@ -110,6 +111,18 @@ xattr -dr com.apple.quarantine /Applications/TimeDial.app
 - **Menu bar icon missing**: Enable it via **System Settings → Menu Bar → Allow in Menu Bar → TimeDial**.
 - **App won’t open after download**: Use Right-click → Open once to clear Gatekeeper.
 - **Wrong app launches** (dev machines): Remove older DerivedData builds and reinstall from `/Applications`.
+
+## 🔒 Privacy
+
+TimeDial does not collect, store, or transmit personal data. It does not connect to the internet, and all preferences (such as timezone choices and UI settings) stay on your Mac.
+
+Read the full policy: https://shubham-shrivastava.github.io/timedial-privacy.html
+
+## 🆘 Support
+
+Need help or want to report a bug? Reach out via email and include your macOS version plus TimeDial version.
+
+Support page: https://shubham-shrivastava.github.io/timedial-support.html
 
 ## 🏗️ Architecture
 
