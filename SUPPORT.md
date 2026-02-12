@@ -6,6 +6,11 @@ If you need help, have a feature request, or found a bug, please contact:
 - Phone: +91 8236028730
 - Address: 471, Infront of I.C.D. 3, Dam colony, Lalitpur, India (284403)
 
+## Download
+
+Mac App Store:
+https://apps.apple.com/us/app/timedial/id6758935499
+
 ## What to Include
 
 - macOS version

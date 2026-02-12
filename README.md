@@ -2,6 +2,8 @@
 
 A lightweight macOS menu bar app for comparing timezones with beautiful, interactive analog clocks.
 
+Mac App Store: https://apps.apple.com/us/app/timedial/id6758935499
+
 ![TimeDial Menu Bar App](assets/1.png)
 
 ## ✨ Features
@@ -47,12 +49,17 @@ A lightweight macOS menu bar app for comparing timezones with beautiful, interac
 
 ## 🚀 Installation
 
-### Option 1: Download Release
+### Option 1: Mac App Store
+1. Download TimeDial from the Mac App Store:
+   https://apps.apple.com/us/app/timedial/id6758935499
+2. Launch TimeDial from Applications.
+
+### Option 2: Download Release
 1. Download the latest `.zip` from [Releases](../../releases)
 2. Unzip and drag `TimeDial.app` to your Applications folder
 3. Right-click → Open (first time only, to bypass Gatekeeper)
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 1. Clone the repository
 ```bash
