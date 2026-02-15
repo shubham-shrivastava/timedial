@@ -7,21 +7,24 @@
 
 import Foundation
 
-struct ClockConfig: Identifiable, Codable, Equatable, Hashable {
+struct ClockConfig: Identifiable, Equatable, Hashable {
     let id: UUID
-    var timezoneIdentifier: String
+    var timezoneIdentifier: String {
+        didSet { _timezone = TimeZone(identifier: timezoneIdentifier) ?? .current }
+    }
     var isFavorite: Bool
     var order: Int
     
-    var timezone: TimeZone {
-        TimeZone(identifier: timezoneIdentifier) ?? .current
-    }
+    /// Cached TimeZone instance — avoids repeated `TimeZone(identifier:)` lookups.
+    private(set) var _timezone: TimeZone
+    var timezone: TimeZone { _timezone }
     
     init(id: UUID = UUID(), timezoneIdentifier: String, isFavorite: Bool = false, order: Int = 0) {
         self.id = id
         self.timezoneIdentifier = timezoneIdentifier
         self.isFavorite = isFavorite
         self.order = order
+        self._timezone = TimeZone(identifier: timezoneIdentifier) ?? .current
     }
     
     init(timezone: TimeZone, order: Int = 0) {
@@ -29,15 +32,44 @@ struct ClockConfig: Identifiable, Codable, Equatable, Hashable {
         self.timezoneIdentifier = timezone.identifier
         self.isFavorite = false
         self.order = order
+        self._timezone = timezone
+    }
+    
+    // MARK: - Codable (skip _timezone, reconstruct from identifier)
+    
+    enum CodingKeys: String, CodingKey {
+        case id, timezoneIdentifier, isFavorite, order
+    }
+}
+
+extension ClockConfig: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        let identifier = try container.decode(String.self, forKey: .timezoneIdentifier)
+        timezoneIdentifier = identifier
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 0
+        _timezone = TimeZone(identifier: identifier) ?? .current
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(timezoneIdentifier, forKey: .timezoneIdentifier)
+        try container.encode(isFavorite, forKey: .isFavorite)
+        try container.encode(order, forKey: .order)
     }
     
     // Display name for the timezone
     var displayName: String {
-        let identifier = timezoneIdentifier
-        if let lastComponent = identifier.split(separator: "/").last {
-            return String(lastComponent).replacingOccurrences(of: "_", with: " ")
-        }
-        return identifier
+        ClockConfig.displayName(for: timezoneIdentifier)
+    }
+    
+    /// Shared utility: extract a human-readable city name from a timezone identifier.
+    static func displayName(for identifier: String) -> String {
+        identifier.split(separator: "/").last
+            .map { String($0).replacingOccurrences(of: "_", with: " ") } ?? identifier
     }
     
     // UTC offset string like "UTC-5" or "UTC+9"

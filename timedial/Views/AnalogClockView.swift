@@ -90,8 +90,8 @@ struct AnalogClockView: View {
                 Text(TimeConversionService.formatTime(time, timezone: timezone))
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.15), value: time)
+                    .contentTransition(isDragging ? .identity : .numericText())
+                    .animation(isDragging ? nil : .easeInOut(duration: 0.15), value: time)
                 
                 Text(timezoneName)
                     .font(.system(size: 11, weight: .medium))
@@ -164,10 +164,6 @@ struct AnalogClockView: View {
     }
     
     private var timezoneName: String {
-        let identifier = timezone.identifier
-        if let lastComponent = identifier.split(separator: "/").last {
-            return String(lastComponent).replacingOccurrences(of: "_", with: " ")
-        }
-        return identifier
+        ClockConfig.displayName(for: timezone.identifier)
     }
 }

@@ -13,16 +13,18 @@ import AppKit
 @MainActor
 class ClockViewModel: ObservableObject {
     // MARK: - Published State
-    @Published var localTime: Date = Date()
+    // Note: localTime, hourAngle, minuteAngle are updated atomically via
+    // a single objectWillChange.send() call to avoid triple redraws per tick.
+    var localTime: Date = Date()
     @Published var isDragging: Bool = false
     @Published var isManualMode: Bool = false
     
     // Stored angles for local clock - single source of truth
-    @Published var hourAngle: Double = 0
-    @Published var minuteAngle: Double = 0
+    var hourAngle: Double = 0
+    var minuteAngle: Double = 0
     
     // App state reference
-    @Published private(set) var appState: AppState
+    private(set) var appState: AppState
     
     // Timer for real-time updates
     private var timerCancellable: AnyCancellable?
@@ -31,6 +33,13 @@ class ClockViewModel: ObservableObject {
     
     // Track for hour rollover detection during drag
     private var isFirstDragUpdate: Bool = true
+    
+    // Cached calendar to avoid repeated Calendar.current allocations
+    private var cachedCalendar = Calendar.current
+    
+    // Throttle drag UI updates to ~30fps to reduce memory/CPU pressure
+    private var lastDragUpdateTime: CFAbsoluteTime = 0
+    private let dragUpdateInterval: CFAbsoluteTime = 1.0 / 30.0
     
     // MARK: - Initialization
     
@@ -53,8 +62,13 @@ class ClockViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] isVisible in
                 guard let self = self else { return }
-                if isVisible && !self.isDragging && !self.isManualMode {
-                    self.updateAnglesFromCurrentTime()
+                if isVisible {
+                    if !self.isDragging && !self.isManualMode {
+                        self.updateAnglesFromCurrentTime()
+                    }
+                    self.startTimer()
+                } else {
+                    self.stopTimer()
                 }
             }
     }
@@ -81,24 +95,26 @@ class ClockViewModel: ObservableObject {
     // MARK: - Timer
     
     private func startTimer() {
+        guard timerCancellable == nil else { return }
         timerCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                autoreleasepool {
-                    guard let self = self else { return }
-                    if self.appState.isPopoverVisible && !self.isDragging && !self.isManualMode {
-                        self.updateAnglesFromCurrentTime()
-                    }
-                }
+                guard let self = self, !self.isDragging, !self.isManualMode else { return }
+                self.updateAnglesFromCurrentTime()
             }
+    }
+    
+    private func stopTimer() {
+        timerCancellable?.cancel()
+        timerCancellable = nil
     }
     
     // MARK: - Angle Computation
     
     private func computeHourAngle(from date: Date, timezone: TimeZone = .current) -> Double {
-        var calendar = Calendar.current
-        calendar.timeZone = timezone
-        let components = calendar.dateComponents([.hour, .minute, .second], from: date)
+        var cal = cachedCalendar
+        cal.timeZone = timezone
+        let components = cal.dateComponents([.hour, .minute, .second], from: date)
         let hour = components.hour ?? 0
         let minute = components.minute ?? 0
         let second = components.second ?? 0
@@ -106,9 +122,9 @@ class ClockViewModel: ObservableObject {
     }
     
     private func computeMinuteAngle(from date: Date, timezone: TimeZone = .current) -> Double {
-        var calendar = Calendar.current
-        calendar.timeZone = timezone
-        let components = calendar.dateComponents([.minute, .second], from: date)
+        var cal = cachedCalendar
+        cal.timeZone = timezone
+        let components = cal.dateComponents([.minute, .second], from: date)
         let minute = components.minute ?? 0
         let second = components.second ?? 0
         return Double(minute) * 6.0 + Double(second) * 0.1
@@ -119,6 +135,7 @@ class ClockViewModel: ObservableObject {
         localTime = now
         hourAngle = computeHourAngle(from: now)
         minuteAngle = computeMinuteAngle(from: now)
+        objectWillChange.send()
     }
     
     // Get angles for a specific timezone clock
@@ -138,32 +155,41 @@ class ClockViewModel: ObservableObject {
     }
     
     func addAngleDelta(_ delta: Double, isHourHand: Bool) {
-        if isHourHand {
-            hourAngle += delta
-            while hourAngle < 0 { hourAngle += 360 }
-            while hourAngle >= 360 { hourAngle -= 360 }
-            updateTimeFromHourAngle()
-        } else {
-            let oldMinuteAngle = minuteAngle
-            minuteAngle += delta
-            
-            // Detect hour rollover when crossing 0/360
-            if !isFirstDragUpdate {
-                let oldNorm = normalizeAngle(oldMinuteAngle)
-                let newNorm = normalizeAngle(minuteAngle)
+        autoreleasepool {
+            if isHourHand {
+                hourAngle += delta
+                while hourAngle < 0 { hourAngle += 360 }
+                while hourAngle >= 360 { hourAngle -= 360 }
+                updateTimeFromHourAngle()
+            } else {
+                let oldMinuteAngle = minuteAngle
+                minuteAngle += delta
                 
-                if oldNorm > 300 && newNorm < 60 && delta > 0 {
-                    adjustHourForMinuteRollover(forward: true)
-                } else if oldNorm < 60 && newNorm > 300 && delta < 0 {
-                    adjustHourForMinuteRollover(forward: false)
+                // Detect hour rollover when crossing 0/360
+                if !isFirstDragUpdate {
+                    let oldNorm = normalizeAngle(oldMinuteAngle)
+                    let newNorm = normalizeAngle(minuteAngle)
+                    
+                    if oldNorm > 300 && newNorm < 60 && delta > 0 {
+                        adjustHourForMinuteRollover(forward: true)
+                    } else if oldNorm < 60 && newNorm > 300 && delta < 0 {
+                        adjustHourForMinuteRollover(forward: false)
+                    }
                 }
+                isFirstDragUpdate = false
+                
+                while minuteAngle < 0 { minuteAngle += 360 }
+                while minuteAngle >= 360 { minuteAngle -= 360 }
+                
+                updateTimeFromMinuteAngle()
             }
-            isFirstDragUpdate = false
             
-            while minuteAngle < 0 { minuteAngle += 360 }
-            while minuteAngle >= 360 { minuteAngle -= 360 }
-            
-            updateTimeFromMinuteAngle()
+            // Throttle UI updates to ~30fps during drag to reduce memory pressure
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastDragUpdateTime >= dragUpdateInterval {
+                lastDragUpdateTime = now
+                objectWillChange.send()
+            }
         }
     }
     
@@ -174,30 +200,30 @@ class ClockViewModel: ObservableObject {
     }
     
     private func adjustHourForMinuteRollover(forward: Bool) {
-        var calendar = Calendar.current
-        calendar.timeZone = .current
-        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
+        var cal = cachedCalendar
+        cal.timeZone = .current
+        var components = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
         var hour = components.hour ?? 0
         
         hour += forward ? 1 : -1
         
         components.hour = hour
-        if let newDate = calendar.date(from: components) {
+        if let newDate = cal.date(from: components) {
             localTime = newDate
             hourAngle = computeHourAngle(from: newDate)
         }
     }
     
     private func updateTimeFromHourAngle() {
-        var calendar = Calendar.current
-        calendar.timeZone = .current
+        var cal = cachedCalendar
+        cal.timeZone = .current
         
         let normalizedAngle = normalizeAngle(hourAngle)
         let totalMinutesInHalf = (normalizedAngle / 360.0) * 12.0 * 60.0
         let hours = Int(totalMinutesInHalf / 60.0) % 12
         let minutes = Int(totalMinutesInHalf) % 60
         
-        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
+        var components = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
         let currentHour = components.hour ?? 0
         let isAfternoon = currentHour >= 12
         
@@ -205,33 +231,35 @@ class ClockViewModel: ObservableObject {
         components.minute = minutes
         components.second = 0
         
-        if let newDate = calendar.date(from: components) {
+        if let newDate = cal.date(from: components) {
             localTime = newDate
             minuteAngle = computeMinuteAngle(from: newDate)
         }
     }
     
     private func updateTimeFromMinuteAngle() {
-        var calendar = Calendar.current
-        calendar.timeZone = .current
+        var cal = cachedCalendar
+        cal.timeZone = .current
         
         let normalizedAngle = normalizeAngle(minuteAngle)
         let totalMinutes = normalizedAngle / 6.0
         let minutes = Int(totalMinutes) % 60
         let seconds = Int((totalMinutes - Double(Int(totalMinutes))) * 60.0) % 60
         
-        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
+        var components = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: localTime)
         components.minute = minutes
         components.second = seconds
         
-        if let newDate = calendar.date(from: components) {
+        if let newDate = cal.date(from: components) {
             localTime = newDate
-            let hour = calendar.component(.hour, from: newDate)
+            let hour = cal.component(.hour, from: newDate)
             hourAngle = Double(hour % 12) * 30.0 + Double(minutes) * 0.5 + Double(seconds) * (0.5 / 60.0)
         }
     }
     
     func endDrag() {
+        // Ensure final position is published before ending drag
+        objectWillChange.send()
         isDragging = false
         isFirstDragUpdate = true
         isManualMode = true
@@ -260,9 +288,6 @@ class ClockViewModel: ObservableObject {
         appState.updateClockTimezone(id: id, timezoneIdentifier: timezoneIdentifier)
     }
     
-    func moveClock(from source: IndexSet, to destination: Int) {
-        appState.moveClock(from: source, to: destination)
-    }
     
     func selectClock(_ id: UUID?) {
         appState.selectClock(id)
@@ -287,14 +312,14 @@ class ClockViewModel: ObservableObject {
     }
     
     func copyTimezoneToClipboard(_ timezone: TimeZone) {
-        let displayName = timezone.identifier.split(separator: "/").last.map { String($0).replacingOccurrences(of: "_", with: " ") } ?? timezone.identifier
+        let displayName = ClockConfig.displayName(for: timezone.identifier)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(displayName, forType: .string)
     }
     
     func copyTimeAndTimezoneToClipboard(timezone: TimeZone) {
         let timeString = TimeConversionService.formatTime(localTime, timezone: timezone)
-        let displayName = timezone.identifier.split(separator: "/").last.map { String($0).replacingOccurrences(of: "_", with: " ") } ?? timezone.identifier
+        let displayName = ClockConfig.displayName(for: timezone.identifier)
         
         let combined = "\(timeString) (\(displayName))"
         NSPasteboard.general.clearContents()

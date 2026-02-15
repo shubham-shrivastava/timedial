@@ -1,22 +1,34 @@
 import Cocoa
 import SwiftUI
+import Combine
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
+    private var sizeObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         ProcessInfo.processInfo.disableAutomaticTermination("Keep TimeDial menu bar item alive")
 
-        let contentView = ContentView()
-            .environmentObject(AppState.shared)
-            .frame(width: 600, height: 420)
+        let appState = AppState.shared
 
+        let contentView = ContentView()
+            .environmentObject(appState)
+
+        let initialSize = appState.preferredPopoverSize
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 600, height: 420)
-        popover.contentViewController = NSHostingController(rootView: contentView)
+        popover.contentSize = NSSize(width: initialSize.width, height: initialSize.height)
+        let hostingController = NSHostingController(rootView: contentView)
+        hostingController.sizingOptions = []   // Prevent auto-reporting preferredContentSize
+        popover.contentViewController = hostingController
+
+        sizeObserver = appState.$preferredPopoverSize
+            .removeDuplicates { $0 == $1 }
+            .sink { [weak self] newSize in
+                self?.popover.contentSize = NSSize(width: newSize.width, height: newSize.height)
+            }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem?.autosaveName = "TimeDialStatusItem"

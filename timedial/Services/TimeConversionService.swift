@@ -47,13 +47,6 @@ struct TimeConversionService {
         return calendar.date(from: components) ?? date
     }
     
-    /// Convert time from one timezone to another
-    static func convertTimezone(date: Date, from sourceTimezone: TimeZone, to targetTimezone: TimeZone) -> Date {
-        // Date objects are timezone-agnostic, so we just return the same date
-        // The display will handle timezone conversion
-        return date
-    }
-    
     /// Get time components in a specific timezone
     static func getComponents(from date: Date, timezone: TimeZone) -> DateComponents {
         var calendar = Calendar.current

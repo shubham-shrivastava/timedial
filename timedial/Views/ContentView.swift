@@ -13,32 +13,54 @@ struct ContentView: View {
     @StateObject private var loginManager = LoginItemManager()
     @EnvironmentObject private var appState: AppState
     @State private var isSettingsPresented = false
+    @State private var settingsPopoverId = UUID()
     
     var body: some View {
-        VStack(spacing: 16) {
-            HeaderView(
-                isCompactMode: appState.isCompactMode,
-                onToggleCompact: {
-                    withAnimation(.spring(duration: 0.3)) {
-                        appState.isCompactMode.toggle()
+        GeometryReader { geometry in
+            VStack(spacing: 16) {
+                HeaderView(
+                    isCompactMode: appState.isCompactMode,
+                    onToggleCompact: {
+                        withAnimation(.spring(duration: 0.3)) {
+                            appState.isCompactMode.toggle()
+                        }
+                    },
+                    onOpenSettings: {
+                        settingsPopoverId = UUID()
+                        isSettingsPresented = true
                     }
-                },
-                onOpenSettings: {
-                    isSettingsPresented = true
+                )
+                
+                ClockGridView(viewModel: viewModel, appState: appState)
+                
+                Spacer(minLength: 0)
+                
+                BottomToolbarView(viewModel: viewModel, appState: appState)
+            }
+            .padding(20)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background(.regularMaterial)
+            .popover(isPresented: $isSettingsPresented, arrowEdge: .top) {
+                SettingsView(loginManager: loginManager)
+                    .id(settingsPopoverId)
+            }
+            // Keyboard shortcuts
+            .background {
+                Group {
+                    Button("") {
+                        settingsPopoverId = UUID()
+                        isSettingsPresented = true
+                    }
+                    .keyboardShortcut(",", modifiers: .command)
+                    
+                    if viewModel.isManualMode {
+                        Button("") { viewModel.resetToCurrentTime() }
+                            .keyboardShortcut("r", modifiers: .command)
+                    }
                 }
-            )
-            
-            ClockGridView(viewModel: viewModel, appState: appState)
-            
-            Spacer(minLength: 0)
-            
-            BottomToolbarView(viewModel: viewModel, appState: appState)
-        }
-        .padding(20)
-        .frame(minWidth: 400, minHeight: 350)
-        .background(.regularMaterial)
-        .popover(isPresented: $isSettingsPresented, arrowEdge: .top) {
-            SettingsView(loginManager: loginManager)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+            }
         }
     }
 }
@@ -89,31 +111,31 @@ struct HeaderView: View {
 struct ClockGridView: View {
     @ObservedObject var viewModel: ClockViewModel
     @ObservedObject var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     private var totalClocks: Int {
         appState.clocks.count + 1 // +1 for local clock
     }
     
     var body: some View {
-        HStack(spacing: 20) {
-            Spacer(minLength: 0)
-            
-            localClockCard
-            
+        let columnCount = max(1, min(totalClocks, 3))
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: columnCount)
+        
+        LazyVGrid(columns: columns, spacing: 16) {
+            localClockCard(clockRadius: 70)
             ForEach(appState.clocks) { config in
                 TimezoneClockCard(
                     config: config,
                     viewModel: viewModel,
-                    appState: appState
+                    appState: appState,
+                    clockRadius: 70
                 )
             }
-            
-            Spacer(minLength: 0)
         }
-        .animation(.spring(duration: 0.3), value: appState.clocks.count)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: appState.clocks.count)
     }
     
-    private var localClockCard: some View {
+    private func localClockCard(clockRadius: CGFloat) -> some View {
         LocalClockCardView(
             hourAngle: viewModel.hourAngle,
             minuteAngle: viewModel.minuteAngle,
@@ -121,6 +143,7 @@ struct ClockGridView: View {
             isDragging: viewModel.isDragging,
             isCompact: appState.isCompactMode,
             isManualMode: viewModel.isManualMode,
+            clockRadius: clockRadius,
             onDragDelta: { delta, isHour in
                 viewModel.addAngleDelta(delta, isHourHand: isHour)
             },
@@ -132,10 +155,12 @@ struct ClockGridView: View {
             },
             onReset: {
                 viewModel.resetToCurrentTime()
+            },
+            onCopyTime: {
+                viewModel.copyTimeToClipboard(timezone: .current)
             }
         )
-        .animation(viewModel.isDragging ? nil : .easeInOut(duration: 0.2), value: viewModel.hourAngle)
-        .animation(viewModel.isDragging ? nil : .easeInOut(duration: 0.2), value: viewModel.minuteAngle)
+        // Note: AnalogClockView handles its own hand animation internally
     }
 }
 
@@ -145,6 +170,8 @@ struct TimezoneClockCard: View {
     let config: ClockConfig
     @ObservedObject var viewModel: ClockViewModel
     @ObservedObject var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var clockRadius: CGFloat = 70
     
     var body: some View {
         ClockCardView(
@@ -154,8 +181,9 @@ struct TimezoneClockCard: View {
             time: viewModel.localTime,
             isCompact: appState.isCompactMode,
             isDragging: viewModel.isDragging,
+            clockRadius: clockRadius,
             onRemove: {
-                withAnimation(.spring(duration: 0.3)) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                     viewModel.removeClock(id: config.id)
                 }
             },
@@ -170,11 +198,16 @@ struct TimezoneClockCard: View {
             },
             onDragEnd: {
                 viewModel.endDrag()
+            },
+            onCopyTime: {
+                viewModel.copyTimeToClipboard(timezone: config.timezone)
+            },
+            onCopyTimeAndTimezone: {
+                viewModel.copyTimeAndTimezoneToClipboard(timezone: config.timezone)
             }
         )
-        .transition(.scale.combined(with: .opacity))
-        .animation(viewModel.isDragging ? nil : .easeInOut(duration: 0.2), value: viewModel.hourAngle(for: config))
-        .animation(viewModel.isDragging ? nil : .easeInOut(duration: 0.2), value: viewModel.minuteAngle(for: config))
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+        // Note: AnalogClockView handles its own hand animation internally
     }
 }
 
@@ -183,6 +216,7 @@ struct TimezoneClockCard: View {
 struct BottomToolbarView: View {
     @ObservedObject var viewModel: ClockViewModel
     @ObservedObject var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         HStack(spacing: 16) {
@@ -198,7 +232,7 @@ struct BottomToolbarView: View {
             
             quitSection
         }
-        .animation(.spring(duration: 0.3), value: viewModel.isManualMode)
+        .animation(reduceMotion ? nil : .spring(duration: 0.3), value: viewModel.isManualMode)
         .padding(.horizontal, 4)
     }
     
@@ -206,12 +240,12 @@ struct BottomToolbarView: View {
     private var addClockSection: some View {
         if appState.canAddMoreClocks {
             AddClockPicker { timezoneId in
-                withAnimation(.spring(duration: 0.3)) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                     viewModel.addClock(timezoneIdentifier: timezoneId)
                 }
             }
         } else {
-            Text("Max 3 clocks")
+            Text("Max 6 clocks")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -219,7 +253,7 @@ struct BottomToolbarView: View {
     
     private var clockCountIndicator: some View {
         HStack(spacing: 4) {
-            // Show 3 dots for 3 total clocks (1 local + 2 timezone)
+            // Show 6 dots for 6 total clocks (1 local + 5 timezone)
             ForEach(0..<(AppState.maxClocks + 1), id: \.self) { index in
                 Circle()
                     .fill(index <= appState.clocks.count ? Color.blue : Color.secondary.opacity(0.3))
@@ -245,6 +279,7 @@ struct BottomToolbarView: View {
             }
             .buttonStyle(.plain)
             .background(.ultraThinMaterial, in: Capsule())
+            .cursorOnHover(.pointingHand)
             .transition(.scale.combined(with: .opacity))
         }
     }
@@ -264,6 +299,7 @@ struct BottomToolbarView: View {
         }
         .buttonStyle(.plain)
         .background(.ultraThinMaterial, in: Capsule())
+        .cursorOnHover(.pointingHand)
         .help("Quit TimeDial")
     }
 }

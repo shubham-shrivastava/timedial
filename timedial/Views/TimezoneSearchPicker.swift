@@ -13,6 +13,7 @@ struct TimezoneSearchPicker: View {
     
     @EnvironmentObject private var appState: AppState
     @State private var isPopoverPresented = false
+    @State private var popoverId = UUID()
     
     init(selectedTimezone: Binding<String>, onSelect: ((String) -> Void)? = nil) {
         self._selectedTimezone = selectedTimezone
@@ -20,14 +21,14 @@ struct TimezoneSearchPicker: View {
     }
     
     private var displayName: String {
-        if let lastComponent = selectedTimezone.split(separator: "/").last {
-            return String(lastComponent).replacingOccurrences(of: "_", with: " ")
-        }
-        return selectedTimezone
+        ClockConfig.displayName(for: selectedTimezone)
     }
     
     var body: some View {
-        Button(action: { isPopoverPresented.toggle() }) {
+        Button(action: {
+            popoverId = UUID()
+            isPopoverPresented = true
+        }) {
             Text(displayName)
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 12)
@@ -43,6 +44,7 @@ struct TimezoneSearchPicker: View {
                 selectedTimezone = id
                 onSelect?(id)
             }
+            .id(popoverId)
             .environmentObject(appState)
         }
     }
@@ -55,22 +57,28 @@ struct TimezoneInlinePicker: View {
     
     @EnvironmentObject private var appState: AppState
     @State private var isPopoverPresented = false
+    @State private var popoverId = UUID()
     
     init(selectedTimezone: Binding<String>) {
         self._selectedTimezone = selectedTimezone
     }
     
     private var displayName: String {
-        if let lastComponent = selectedTimezone.split(separator: "/").last {
-            return String(lastComponent).replacingOccurrences(of: "_", with: " ")
-        }
-        return selectedTimezone
+        ClockConfig.displayName(for: selectedTimezone)
     }
     
     var body: some View {
-        Button(action: { isPopoverPresented.toggle() }) {
-            Text(displayName)
-                .font(.system(size: 11, weight: .medium))
+        Button(action: {
+            popoverId = UUID()
+            isPopoverPresented = true
+        }) {
+            HStack(spacing: 3) {
+                Text(displayName)
+                    .font(.system(size: 11, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
@@ -80,6 +88,7 @@ struct TimezoneInlinePicker: View {
             ) { id in
                 selectedTimezone = id
             }
+            .id(popoverId)
             .environmentObject(appState)
         }
     }
@@ -92,9 +101,13 @@ struct AddClockPicker: View {
     
     @EnvironmentObject private var appState: AppState
     @State private var isPopoverPresented = false
+    @State private var popoverId = UUID()
     
     var body: some View {
-        Button(action: { isPopoverPresented.toggle() }) {
+        Button(action: {
+            popoverId = UUID()
+            isPopoverPresented = true
+        }) {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))
@@ -106,6 +119,8 @@ struct AddClockPicker: View {
             .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+        .cursorOnHover(.pointingHand)
+        .keyboardShortcut("n", modifiers: .command)
         .disabled(!appState.canAddMoreClocks)
         .opacity(appState.canAddMoreClocks ? 1 : 0.5)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
@@ -115,6 +130,7 @@ struct AddClockPicker: View {
             ) { id in
                 onAdd(id)
             }
+            .id(popoverId)
             .environmentObject(appState)
         }
     }
@@ -180,6 +196,8 @@ private struct TimezonePickerPopover: View {
                         ForEach(group.timezones) { info in
                             TimezoneRow(info: info) {
                                 handleSelect(info.id)
+                            } onToggleFavorite: {
+                                appState.toggleFavorite(timezoneIdentifier: info.id)
                             }
                         }
                     } header: {
@@ -204,21 +222,32 @@ private struct TimezonePickerPopover: View {
 private struct TimezoneRow: View {
     let info: AppState.TimezoneInfo
     let onTap: () -> Void
+    let onToggleFavorite: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            HStack {
-                Text(info.displayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
-                Text(info.utcOffset)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+        HStack {
+            Button(action: onTap) {
+                HStack {
+                    Text(info.displayName)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(info.utcOffset)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            
+            Button(action: onToggleFavorite) {
+                Image(systemName: info.isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 11))
+                    .foregroundStyle(info.isFavorite ? .yellow : .secondary.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .help(info.isFavorite ? "Remove from favorites" : "Add to favorites")
         }
-        .buttonStyle(.plain)
     }
 }
 

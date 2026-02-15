@@ -24,7 +24,10 @@ class AppState: ObservableObject {
     
     // MARK: - Published State
     @Published var clocks: [ClockConfig] {
-        didSet { saveClocks() }
+        didSet {
+            saveClocks()
+            updatePreferredPopoverSize()
+        }
     }
     
     @Published var favoriteTimezones: Set<String> {
@@ -43,8 +46,11 @@ class AppState: ObservableObject {
     @Published var isPopoverVisible: Bool = false
     @Published private(set) var cachedTimezoneGroups: [TimezoneGroup] = []
     
+    /// Adaptive popover size: smaller for 1-3 clocks, larger for 4-6
+    @Published var preferredPopoverSize: CGSize = CGSize(width: 600, height: 380)
+    
     // MARK: - Constants
-    static let maxClocks = 2  // 2 timezone clocks + 1 local = 3 total
+    static let maxClocks = 5  // 5 timezone clocks + 1 local = 6 total
     static let defaultTimezone = "America/New_York"
     
     // MARK: - Initialization
@@ -78,6 +84,19 @@ class AppState: ObservableObject {
         }
 
         refreshCachedTimezoneGroups()
+        updatePreferredPopoverSize()
+    }
+    
+    // MARK: - Popover Size (adaptive by clock count)
+    private func updatePreferredPopoverSize() {
+        let totalClocks = clocks.count + 1
+        let newSize: CGSize
+        if totalClocks <= 3 {
+            newSize = CGSize(width: 600, height: 380)
+        } else {
+            newSize = CGSize(width: 720, height: 700)
+        }
+        preferredPopoverSize = newSize
     }
     
     // MARK: - Persistence
@@ -94,7 +113,7 @@ class AppState: ObservableObject {
     }
 
     private func refreshCachedTimezoneGroups() {
-        cachedTimezoneGroups = buildTimezoneGroups(searchQuery: "")
+        cachedTimezoneGroups = getGroupedTimezones(searchQuery: "")
     }
     
     // MARK: - Clock Management
@@ -115,31 +134,27 @@ class AppState: ObservableObject {
     }
     
     func removeClock(id: UUID) {
-        clocks.removeAll { $0.id == id }
-        reorderClocks()
+        var updated = clocks
+        updated.removeAll { $0.id == id }
+        for i in updated.indices { updated[i].order = i }
+        clocks = updated
     }
     
     func removeClock(at index: Int) {
         guard index >= 0 && index < clocks.count else { return }
-        clocks.remove(at: index)
-        reorderClocks()
+        var updated = clocks
+        updated.remove(at: index)
+        for i in updated.indices { updated[i].order = i }
+        clocks = updated
     }
     
     func updateClockTimezone(id: UUID, timezoneIdentifier: String) {
         guard let index = clocks.firstIndex(where: { $0.id == id }) else { return }
-        clocks[index].timezoneIdentifier = timezoneIdentifier
+        var updated = clocks
+        updated[index].timezoneIdentifier = timezoneIdentifier
+        clocks = updated
     }
     
-    func moveClock(from source: IndexSet, to destination: Int) {
-        clocks.move(fromOffsets: source, toOffset: destination)
-        reorderClocks()
-    }
-    
-    private func reorderClocks() {
-        for (index, _) in clocks.enumerated() {
-            clocks[index].order = index
-        }
-    }
     
     // MARK: - Favorites Management
     func toggleFavorite(timezoneIdentifier: String) {
@@ -228,12 +243,7 @@ extension AppState {
 
     private static func makeTimezoneInfoBase(identifier: String) -> TimezoneInfoBase? {
         guard let tz = TimeZone(identifier: identifier) else { return nil }
-        let displayName: String
-        if let lastComponent = identifier.split(separator: "/").last {
-            displayName = String(lastComponent).replacingOccurrences(of: "_", with: " ")
-        } else {
-            displayName = identifier
-        }
+        let displayName = ClockConfig.displayName(for: identifier)
 
         let seconds = tz.secondsFromGMT()
         let hours = seconds / 3600
@@ -306,11 +316,7 @@ extension AppState {
             let tz = TimeZone(identifier: identifier) ?? .current
             
             // Display name
-            if let lastComponent = identifier.split(separator: "/").last {
-                self.displayName = String(lastComponent).replacingOccurrences(of: "_", with: " ")
-            } else {
-                self.displayName = identifier
-            }
+            self.displayName = ClockConfig.displayName(for: identifier)
             
             // UTC offset
             let seconds = tz.secondsFromGMT()
@@ -327,10 +333,6 @@ extension AppState {
     }
     
     func getGroupedTimezones(searchQuery: String = "") -> [TimezoneGroup] {
-        if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return cachedTimezoneGroups
-        }
-
         var groups: [TimezoneGroup] = []
         let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
         
@@ -372,52 +374,21 @@ extension AppState {
         }
         
         // Regional sections
-        for group in AppState.baseTimezoneGroups {
-            let filtered = group.timezones.filter {
-                $0.displayName.lowercased().contains(query) ||
-                $0.id.lowercased().contains(query)
-            }
-            if !filtered.isEmpty {
-                groups.append(TimezoneGroup(id: group.id, name: group.name, timezones: filtered))
+        if query.isEmpty {
+            groups.append(contentsOf: AppState.baseTimezoneGroups)
+        } else {
+            for group in AppState.baseTimezoneGroups {
+                let filtered = group.timezones.filter {
+                    $0.displayName.lowercased().contains(query) ||
+                    $0.id.lowercased().contains(query)
+                }
+                if !filtered.isEmpty {
+                    groups.append(TimezoneGroup(id: group.id, name: group.name, timezones: filtered))
+                }
             }
         }
         
         return groups
     }
 
-    private func buildTimezoneGroups(searchQuery: String) -> [TimezoneGroup] {
-        var groups: [TimezoneGroup] = []
-        let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
-
-        if !query.isEmpty, let resolvedId = ClockConfig.timezoneIdentifier(fromAbbreviation: query) {
-            if let base = AppState.timezoneInfoCache[resolvedId] ?? AppState.makeTimezoneInfoBase(identifier: resolvedId) {
-                let info = TimezoneInfo(
-                    identifier: resolvedId,
-                    displayName: base.displayName,
-                    utcOffset: base.utcOffset,
-                    isFavorite: isFavorite(resolvedId)
-                )
-                groups.append(TimezoneGroup(id: "quickadd", name: "Quick Add", timezones: [info]))
-            }
-        }
-
-        if !favoriteTimezones.isEmpty {
-            let favInfos = favoriteTimezones.compactMap { id -> TimezoneInfo? in
-                guard let base = AppState.timezoneInfoCache[id] ?? AppState.makeTimezoneInfoBase(identifier: id) else { return nil }
-                return TimezoneInfo(
-                    identifier: id,
-                    displayName: base.displayName,
-                    utcOffset: base.utcOffset,
-                    isFavorite: true
-                )
-            }
-
-            if !favInfos.isEmpty {
-                groups.append(TimezoneGroup(id: "favorites", name: "Favorites", timezones: favInfos.sorted { $0.displayName < $1.displayName }))
-            }
-        }
-
-        groups.append(contentsOf: AppState.baseTimezoneGroups)
-        return groups
-    }
 }

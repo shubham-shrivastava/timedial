@@ -6,6 +6,23 @@
 //
 
 import SwiftUI
+import AppKit
+
+// MARK: - Cursor Helper
+
+extension View {
+    /// Sets the cursor when hovering over this view.
+    /// Uses NSCursor.set() instead of push/pop to avoid stack imbalance during drag gestures.
+    func cursorOnHover(_ cursor: NSCursor) -> some View {
+        self.onHover { hovering in
+            if hovering {
+                cursor.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+    }
+}
 
 struct ClockCardView: View {
     let config: ClockConfig
@@ -14,11 +31,14 @@ struct ClockCardView: View {
     let time: Date
     let isCompact: Bool
     let isDragging: Bool
+    let clockRadius: CGFloat
     let onRemove: () -> Void
     let onTimezoneChange: (String) -> Void
     let onDragDelta: (Double, Bool) -> Void
     let onDragStart: () -> Void
     let onDragEnd: () -> Void
+    let onCopyTime: () -> Void
+    let onCopyTimeAndTimezone: () -> Void
     
     @State private var isHovering: Bool = false
     @State private var timezoneId: String
@@ -30,11 +50,14 @@ struct ClockCardView: View {
         time: Date,
         isCompact: Bool = false,
         isDragging: Bool = false,
+        clockRadius: CGFloat = 70,
         onRemove: @escaping () -> Void,
         onTimezoneChange: @escaping (String) -> Void,
         onDragDelta: @escaping (Double, Bool) -> Void,
         onDragStart: @escaping () -> Void,
-        onDragEnd: @escaping () -> Void
+        onDragEnd: @escaping () -> Void,
+        onCopyTime: @escaping () -> Void = {},
+        onCopyTimeAndTimezone: @escaping () -> Void = {}
     ) {
         self.config = config
         self.hourAngle = hourAngle
@@ -42,11 +65,14 @@ struct ClockCardView: View {
         self.time = time
         self.isCompact = isCompact
         self.isDragging = isDragging
+        self.clockRadius = clockRadius
         self.onRemove = onRemove
         self.onTimezoneChange = onTimezoneChange
         self.onDragDelta = onDragDelta
         self.onDragStart = onDragStart
         self.onDragEnd = onDragEnd
+        self.onCopyTime = onCopyTime
+        self.onCopyTimeAndTimezone = onCopyTimeAndTimezone
         self._timezoneId = State(initialValue: config.timezoneIdentifier)
     }
     
@@ -58,20 +84,21 @@ struct ClockCardView: View {
                     .onChange(of: timezoneId) { _, newValue in
                         onTimezoneChange(newValue)
                     }
+                    .cursorOnHover(.pointingHand)
                 
                 Spacer()
                 
                 // Remove button (visible on hover)
-                if isHovering {
-                    Button(action: onRemove) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
-                    .help("Remove clock")
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+                .opacity(isHovering ? 1 : 0)
+                .allowsHitTesting(isHovering)
+                .help("Remove clock")
+                .cursorOnHover(.pointingHand)
             }
             
             if isCompact {
@@ -87,9 +114,13 @@ struct ClockCardView: View {
         )
         .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
+            isHovering = hovering
+        }
+        .contextMenu {
+            Button("Copy Time") { onCopyTime() }
+            Button("Copy Time & Timezone") { onCopyTimeAndTimezone() }
+            Divider()
+            Button("Remove Clock", role: .destructive) { onRemove() }
         }
     }
     
@@ -99,7 +130,7 @@ struct ClockCardView: View {
             AnalogClockView(
                 hourAngle: hourAngle,
                 minuteAngle: minuteAngle,
-                radius: 70,
+                radius: clockRadius,
                 timezone: config.timezone,
                 time: time,
                 isDragging: isDragging,
@@ -167,10 +198,40 @@ struct LocalClockCardView: View {
     let isDragging: Bool
     let isCompact: Bool
     let isManualMode: Bool
+    let clockRadius: CGFloat
     let onDragDelta: (Double, Bool) -> Void
     let onDragStart: () -> Void
     let onDragEnd: () -> Void
     let onReset: () -> Void
+    let onCopyTime: () -> Void
+    
+    init(
+        hourAngle: Double,
+        minuteAngle: Double,
+        time: Date,
+        isDragging: Bool,
+        isCompact: Bool,
+        isManualMode: Bool,
+        clockRadius: CGFloat = 70,
+        onDragDelta: @escaping (Double, Bool) -> Void,
+        onDragStart: @escaping () -> Void,
+        onDragEnd: @escaping () -> Void,
+        onReset: @escaping () -> Void,
+        onCopyTime: @escaping () -> Void = {}
+    ) {
+        self.hourAngle = hourAngle
+        self.minuteAngle = minuteAngle
+        self.time = time
+        self.isDragging = isDragging
+        self.isCompact = isCompact
+        self.isManualMode = isManualMode
+        self.clockRadius = clockRadius
+        self.onDragDelta = onDragDelta
+        self.onDragStart = onDragStart
+        self.onDragEnd = onDragEnd
+        self.onReset = onReset
+        self.onCopyTime = onCopyTime
+    }
     
     var body: some View {
         VStack(spacing: isCompact ? 6 : 10) {
@@ -200,6 +261,7 @@ struct LocalClockCardView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(.ultraThinMaterial, in: Capsule())
+                    .cursorOnHover(.pointingHand)
                 }
             }
             
@@ -219,6 +281,9 @@ struct LocalClockCardView: View {
                 )
         )
         .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
+        .contextMenu {
+            Button("Copy Time") { onCopyTime() }
+        }
     }
     
     private var fullView: some View {
@@ -227,7 +292,7 @@ struct LocalClockCardView: View {
             AnalogClockView(
                 hourAngle: hourAngle,
                 minuteAngle: minuteAngle,
-                radius: 70,
+                radius: clockRadius,
                 timezone: .current,
                 time: time,
                 isDragging: isDragging,
@@ -268,7 +333,7 @@ struct LocalClockCardView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                 
-                Text(TimeZone.current.identifier.split(separator: "/").last.map { String($0).replacingOccurrences(of: "_", with: " ") } ?? "Local")
+                Text(ClockConfig.displayName(for: TimeZone.current.identifier))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
