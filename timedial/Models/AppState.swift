@@ -335,6 +335,17 @@ extension AppState {
     func getGroupedTimezones(searchQuery: String = "") -> [TimezoneGroup] {
         var groups: [TimezoneGroup] = []
         let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
+
+        func applyFavoriteState(to infos: [TimezoneInfo]) -> [TimezoneInfo] {
+            infos.map { info in
+                TimezoneInfo(
+                    identifier: info.id,
+                    displayName: info.displayName,
+                    utcOffset: info.utcOffset,
+                    isFavorite: isFavorite(info.id)
+                )
+            }
+        }
         
         // Check if query is an abbreviation
         if !query.isEmpty, let resolvedId = ClockConfig.timezoneIdentifier(fromAbbreviation: query) {
@@ -375,7 +386,13 @@ extension AppState {
         
         // Regional sections
         if query.isEmpty {
-            groups.append(contentsOf: AppState.baseTimezoneGroups)
+            groups.append(contentsOf: AppState.baseTimezoneGroups.map { group in
+                TimezoneGroup(
+                    id: group.id,
+                    name: group.name,
+                    timezones: applyFavoriteState(to: group.timezones)
+                )
+            })
         } else {
             for group in AppState.baseTimezoneGroups {
                 let filtered = group.timezones.filter {
@@ -383,7 +400,13 @@ extension AppState {
                     $0.id.lowercased().contains(query)
                 }
                 if !filtered.isEmpty {
-                    groups.append(TimezoneGroup(id: group.id, name: group.name, timezones: filtered))
+                    groups.append(
+                        TimezoneGroup(
+                            id: group.id,
+                            name: group.name,
+                            timezones: applyFavoriteState(to: filtered)
+                        )
+                    )
                 }
             }
         }

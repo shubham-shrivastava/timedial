@@ -8,7 +8,7 @@ Mac App Store: https://apps.apple.com/us/app/timedial/id6758935499
 
 ## ✨ Features
 
-- **🌍 Multiple Timezone Clocks** - Compare up to 3 different timezones at once (1 local + 2 additional)
+- **🌍 Multiple Timezone Clocks** - Compare up to 6 different timezones at once (1 local + 5 additional)
 - **🖱️ Interactive Time Adjustment** - Drag any clock's hour or minute hand to set time manually
 - **⚡ Real-time Sync** - All clocks update instantly when you adjust any clock
 - **🎨 Beautiful Analog Design** - Clean, modern clock faces with smooth animations
@@ -37,7 +37,7 @@ Mac App Store: https://apps.apple.com/us/app/timedial/id6758935499
 
 1. **Click the clock icon** in your menu bar to open TimeDial
 2. **Drag clock hands** to manually set time - all other clocks update in real-time
-3. **Add clocks** using the "+ Add Clock" button (supports up to 2 additional timezones)
+3. **Add clocks** using the "+ Add Clock" button (supports up to 5 additional timezones)
 4. **Search timezones** by city name or abbreviation (e.g., "PST", "Tokyo", "London")
 5. **Toggle compact view** using the button in the top-right corner
 6. **Reset to current time** by clicking the "Reset All" button (appears when in manual mode)
