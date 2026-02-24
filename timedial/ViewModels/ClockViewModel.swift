@@ -331,8 +331,4 @@ class ClockViewModel: ObservableObject {
     func getFormattedTime(for timezone: TimeZone) -> String {
         TimeConversionService.formatTime(localTime, timezone: timezone)
     }
-    
-    func timeDifference(for config: ClockConfig) -> String {
-        return config.timeDifferenceFromLocal()
-    }
 }

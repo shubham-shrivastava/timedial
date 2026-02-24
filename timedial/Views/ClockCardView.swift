@@ -33,7 +33,6 @@ struct ClockCardView: View {
     let isDragging: Bool
     let clockRadius: CGFloat
     let onRemove: () -> Void
-    let onTimezoneChange: (String) -> Void
     let onDragDelta: (Double, Bool) -> Void
     let onDragStart: () -> Void
     let onDragEnd: () -> Void
@@ -41,54 +40,18 @@ struct ClockCardView: View {
     let onCopyTimeAndTimezone: () -> Void
     
     @State private var isHovering: Bool = false
-    @State private var timezoneId: String
-    
-    init(
-        config: ClockConfig,
-        hourAngle: Double,
-        minuteAngle: Double,
-        time: Date,
-        isCompact: Bool = false,
-        isDragging: Bool = false,
-        clockRadius: CGFloat = 70,
-        onRemove: @escaping () -> Void,
-        onTimezoneChange: @escaping (String) -> Void,
-        onDragDelta: @escaping (Double, Bool) -> Void,
-        onDragStart: @escaping () -> Void,
-        onDragEnd: @escaping () -> Void,
-        onCopyTime: @escaping () -> Void = {},
-        onCopyTimeAndTimezone: @escaping () -> Void = {}
-    ) {
-        self.config = config
-        self.hourAngle = hourAngle
-        self.minuteAngle = minuteAngle
-        self.time = time
-        self.isCompact = isCompact
-        self.isDragging = isDragging
-        self.clockRadius = clockRadius
-        self.onRemove = onRemove
-        self.onTimezoneChange = onTimezoneChange
-        self.onDragDelta = onDragDelta
-        self.onDragStart = onDragStart
-        self.onDragEnd = onDragEnd
-        self.onCopyTime = onCopyTime
-        self.onCopyTimeAndTimezone = onCopyTimeAndTimezone
-        self._timezoneId = State(initialValue: config.timezoneIdentifier)
-    }
     
     var body: some View {
         VStack(spacing: isCompact ? 6 : 10) {
-            // Header with timezone picker and remove button
             HStack {
-                TimezoneInlinePicker(selectedTimezone: $timezoneId)
-                    .onChange(of: timezoneId) { _, newValue in
-                        onTimezoneChange(newValue)
-                    }
-                    .cursorOnHover(.pointingHand)
+                TimezoneInlinePicker(
+                    timezoneIdentifier: config.timezoneIdentifier,
+                    clockId: config.id
+                )
+                .cursorOnHover(.pointingHand)
                 
                 Spacer()
                 
-                // Remove button (visible on hover)
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))

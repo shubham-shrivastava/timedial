@@ -59,27 +59,4 @@ struct TimeConversionService {
     static func formatTime(_ date: Date, timezone: TimeZone, style: DateFormatter.Style = .medium) -> String {
         DateFormatterCache.shared.string(from: date, timeZone: timezone, style: style)
     }
-    
-    /// Get common timezones for picker
-    static var commonTimezones: [(name: String, timezone: TimeZone)] {
-        let timezones: [(String, String)] = [
-            ("New York", "America/New_York"),
-            ("Los Angeles", "America/Los_Angeles"),
-            ("Chicago", "America/Chicago"),
-            ("London", "Europe/London"),
-            ("Paris", "Europe/Paris"),
-            ("Berlin", "Europe/Berlin"),
-            ("Tokyo", "Asia/Tokyo"),
-            ("Hong Kong", "Asia/Hong_Kong"),
-            ("Singapore", "Asia/Singapore"),
-            ("Sydney", "Australia/Sydney"),
-            ("Dubai", "Asia/Dubai"),
-            ("Mumbai", "Asia/Kolkata"),
-        ]
-        
-        return timezones.compactMap { name, identifier in
-            guard let timezone = TimeZone(identifier: identifier) else { return nil }
-            return (name, timezone)
-        }
-    }
 }

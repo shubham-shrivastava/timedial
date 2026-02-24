@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var sizeObserver: AnyCancellable?
+    private var pickerBehaviorObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -28,6 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .removeDuplicates { $0 == $1 }
             .sink { [weak self] newSize in
                 self?.popover.contentSize = NSSize(width: newSize.width, height: newSize.height)
+            }
+
+        pickerBehaviorObserver = appState.$activePickerMode
+            .removeDuplicates()
+            .sink { [weak self] mode in
+                self?.popover.behavior = mode != nil ? .applicationDefined : .transient
             }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -70,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        AppState.shared.pickerPanel.close()
         AppState.shared.isPopoverVisible = false
     }
 }

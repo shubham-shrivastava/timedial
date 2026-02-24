@@ -2,78 +2,31 @@
 //  TimezoneSearchPicker.swift
 //  timedial
 //
-//  Searchable, grouped timezone picker with favorites and quick-add
+//  Timezone picker trigger buttons and panel content.
+//  Buttons open a native NSPanel via PickerPanelController,
+//  avoiding crash-prone nested SwiftUI popovers.
 //
 
 import SwiftUI
 
-struct TimezoneSearchPicker: View {
-    @Binding var selectedTimezone: String
-    let onSelect: ((String) -> Void)?
-    
-    @EnvironmentObject private var appState: AppState
-    @State private var isPopoverPresented = false
-    @State private var popoverId = UUID()
-    
-    init(selectedTimezone: Binding<String>, onSelect: ((String) -> Void)? = nil) {
-        self._selectedTimezone = selectedTimezone
-        self.onSelect = onSelect
-    }
-    
-    private var displayName: String {
-        ClockConfig.displayName(for: selectedTimezone)
-    }
-    
-    var body: some View {
-        Button(action: {
-            popoverId = UUID()
-            isPopoverPresented = true
-        }) {
-            Text(displayName)
-                .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-            TimezonePickerPopover(
-                isPresented: $isPopoverPresented,
-                initialGroups: appState.cachedTimezoneGroups
-            ) { id in
-                selectedTimezone = id
-                onSelect?(id)
-            }
-            .id(popoverId)
-            .environmentObject(appState)
-        }
-    }
-}
-
-// MARK: - Inline Picker Variant (for clock cards)
+// MARK: - Inline Picker Button (clock card header)
 
 struct TimezoneInlinePicker: View {
-    @Binding var selectedTimezone: String
-    
+    let timezoneIdentifier: String
+    let clockId: UUID
+
     @EnvironmentObject private var appState: AppState
-    @State private var isPopoverPresented = false
-    @State private var popoverId = UUID()
-    
-    init(selectedTimezone: Binding<String>) {
-        self._selectedTimezone = selectedTimezone
-    }
-    
-    private var displayName: String {
-        ClockConfig.displayName(for: selectedTimezone)
-    }
-    
+    @StateObject private var frameRef = ScreenFrameRef()
+
     var body: some View {
         Button(action: {
-            popoverId = UUID()
-            isPopoverPresented = true
+            appState.showPickerPanel(
+                mode: .changeTimezone(clockId: clockId),
+                from: frameRef.screenFrame
+            )
         }) {
             HStack(spacing: 3) {
-                Text(displayName)
+                Text(ClockConfig.displayName(for: timezoneIdentifier))
                     .font(.system(size: 11, weight: .medium))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
@@ -81,32 +34,19 @@ struct TimezoneInlinePicker: View {
             }
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-            TimezonePickerPopover(
-                isPresented: $isPopoverPresented,
-                initialGroups: appState.cachedTimezoneGroups
-            ) { id in
-                selectedTimezone = id
-            }
-            .id(popoverId)
-            .environmentObject(appState)
-        }
+        .background(ScreenFrameCapture(ref: frameRef))
     }
 }
 
-// MARK: - Add Clock Picker
+// MARK: - Add Clock Button
 
 struct AddClockPicker: View {
-    let onAdd: (String) -> Void
-    
     @EnvironmentObject private var appState: AppState
-    @State private var isPopoverPresented = false
-    @State private var popoverId = UUID()
-    
+    @StateObject private var frameRef = ScreenFrameRef()
+
     var body: some View {
         Button(action: {
-            popoverId = UUID()
-            isPopoverPresented = true
+            appState.showPickerPanel(mode: .addClock, from: frameRef.screenFrame)
         }) {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
@@ -123,58 +63,55 @@ struct AddClockPicker: View {
         .keyboardShortcut("n", modifiers: .command)
         .disabled(!appState.canAddMoreClocks)
         .opacity(appState.canAddMoreClocks ? 1 : 0.5)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-            TimezonePickerPopover(
-                isPresented: $isPopoverPresented,
-                initialGroups: appState.cachedTimezoneGroups
-            ) { id in
-                onAdd(id)
-            }
-            .id(popoverId)
-            .environmentObject(appState)
-        }
+        .background(ScreenFrameCapture(ref: frameRef))
     }
 }
 
-// MARK: - Popover Content
+// MARK: - Picker Panel Content (hosted by NSPanel)
 
-private struct TimezonePickerPopover: View {
-    @Binding var isPresented: Bool
+struct TimezonePickerPanel: View {
     let onSelect: (String) -> Void
+    let onDismiss: () -> Void
 
     @EnvironmentObject private var appState: AppState
     @State private var searchText: String = ""
-    @State private var groupedTimezones: [AppState.TimezoneGroup]
-
-    init(isPresented: Binding<Bool>, initialGroups: [AppState.TimezoneGroup], onSelect: @escaping (String) -> Void) {
-        self._isPresented = isPresented
-        self.onSelect = onSelect
-        self._groupedTimezones = State(initialValue: initialGroups)
-    }
+    @State private var groupedTimezones: [AppState.TimezoneGroup] = []
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 10) {
-            TextField("Search timezones (e.g. GMT, UTC, CET, JST, etc.)...", text: $searchText)
+            HStack {
+                Text("Select Timezone")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            TextField("Search city, region, or abbreviation...", text: $searchText)
                 .textFieldStyle(.roundedBorder)
+                .focused($isSearchFocused)
 
             Divider()
 
             listView
         }
-        .padding(12)
-        .frame(width: 360, height: 420)
+        .padding(14)
+        .frame(width: 340, height: 400)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .onAppear {
-            if groupedTimezones.isEmpty {
-                groupedTimezones = appState.cachedTimezoneGroups
+            searchText = ""
+            groupedTimezones = appState.cachedTimezoneGroups
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isSearchFocused = true
             }
         }
         .onChange(of: searchText) { _, _ in
             groupedTimezones = appState.getGroupedTimezones(searchQuery: searchText)
-        }
-        .onChange(of: appState.cachedTimezoneGroups) { _, _ in
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                groupedTimezones = appState.cachedTimezoneGroups
-            }
         }
         .onChange(of: appState.favoriteTimezones) { _, _ in
             groupedTimezones = appState.getGroupedTimezones(searchQuery: searchText)
@@ -195,7 +132,7 @@ private struct TimezonePickerPopover: View {
                     Section {
                         ForEach(group.timezones) { info in
                             TimezoneRow(info: info) {
-                                handleSelect(info.id)
+                                onSelect(info.id)
                             } onToggleFavorite: {
                                 appState.toggleFavorite(timezoneIdentifier: info.id)
                             }
@@ -211,15 +148,11 @@ private struct TimezonePickerPopover: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
     }
-
-    private func handleSelect(_ id: String) {
-        onSelect(id)
-        searchText = ""
-        isPresented = false
-    }
 }
 
-private struct TimezoneRow: View {
+// MARK: - Timezone Row
+
+struct TimezoneRow: View {
     let info: AppState.TimezoneInfo
     let onTap: () -> Void
     let onToggleFavorite: () -> Void
@@ -228,18 +161,33 @@ private struct TimezoneRow: View {
         HStack {
             Button(action: onTap) {
                 HStack {
-                    Text(info.displayName)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(info.displayName)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                        if !info.localizedName.isEmpty {
+                            Text(info.localizedName)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
                     Spacer()
-                    Text(info.utcOffset)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(info.utcOffset)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        if !info.abbreviation.isEmpty {
+                            Text(info.abbreviation)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            
+
             Button(action: onToggleFavorite) {
                 Image(systemName: info.isFavorite ? "star.fill" : "star")
                     .font(.system(size: 11))
@@ -252,12 +200,10 @@ private struct TimezoneRow: View {
 }
 
 #Preview {
-    VStack(spacing: 20) {
-        TimezoneSearchPicker(selectedTimezone: .constant("America/New_York"))
-        TimezoneInlinePicker(selectedTimezone: .constant("Asia/Tokyo"))
-        AddClockPicker(onAdd: { _ in })
+    ZStack {
+        Color.gray.opacity(0.2)
+        TimezonePickerPanel(onSelect: { _ in }, onDismiss: {})
     }
-    .padding()
-    .frame(width: 400)
+    .frame(width: 600, height: 500)
     .environmentObject(AppState.shared)
 }

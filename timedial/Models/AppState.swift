@@ -9,6 +9,11 @@ import Foundation
 import Combine
 import SwiftUI
 
+enum TimezonePickerMode: Equatable {
+    case addClock
+    case changeTimezone(clockId: UUID)
+}
+
 @MainActor
 class AppState: ObservableObject {
     // MARK: - Singleton
@@ -20,6 +25,17 @@ class AppState: ObservableObject {
         static let favorites = "timedial.favorites"
         static let isCompactMode = "timedial.isCompactMode"
         static let selectedClockId = "timedial.selectedClockId"
+    }
+    
+    // MARK: - Timezone Picker
+    lazy var pickerPanel = PickerPanelController()
+
+    @Published var activePickerMode: TimezonePickerMode? {
+        didSet {
+            if activePickerMode == nil && pickerPanel.isVisible {
+                pickerPanel.close()
+            }
+        }
     }
     
     // MARK: - Published State
@@ -191,6 +207,29 @@ class AppState: ObservableObject {
         selectClock(clocks[index].id)
     }
     
+    // MARK: - Picker Panel
+    func showPickerPanel(mode: TimezonePickerMode, from sourceFrame: CGRect) {
+        activePickerMode = mode
+        pickerPanel.onDismiss = { [weak self] in
+            self?.activePickerMode = nil
+        }
+        pickerPanel.show(at: sourceFrame, appState: self) { [weak self] timezoneId in
+            self?.handlePickerSelection(timezoneId)
+        }
+    }
+
+    private func handlePickerSelection(_ timezoneId: String) {
+        switch activePickerMode {
+        case .addClock:
+            _ = addClock(timezoneIdentifier: timezoneId)
+        case .changeTimezone(let clockId):
+            updateClockTimezone(id: clockId, timezoneIdentifier: timezoneId)
+        case nil:
+            break
+        }
+        activePickerMode = nil
+    }
+
     // MARK: - Helpers
     var canAddMoreClocks: Bool {
         clocks.count < AppState.maxClocks
@@ -207,56 +246,78 @@ extension AppState {
     private struct TimezoneInfoBase {
         let displayName: String
         let utcOffset: String
+        let localizedName: String
+        let abbreviation: String
+        let searchableText: String
     }
 
-    private static let regionIdentifiers: [(String, [String])] = [
-        ("Americas", [
-            "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-            "America/Toronto", "America/Vancouver", "America/Mexico_City", "America/Sao_Paulo",
-            "America/Buenos_Aires", "America/Lima", "America/Bogota", "America/Santiago"
-        ]),
-        ("Europe", [
-            "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome",
-            "Europe/Madrid", "Europe/Amsterdam", "Europe/Brussels", "Europe/Vienna",
-            "Europe/Stockholm", "Europe/Oslo", "Europe/Copenhagen", "Europe/Helsinki",
-            "Europe/Warsaw", "Europe/Prague", "Europe/Budapest", "Europe/Athens",
-            "Europe/Moscow", "Europe/Istanbul"
-        ]),
-        ("Asia", [
-            "Asia/Tokyo", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
-            "Asia/Seoul", "Asia/Taipei", "Asia/Bangkok", "Asia/Jakarta",
-            "Asia/Kolkata", "Asia/Mumbai", "Asia/Dubai", "Asia/Riyadh",
-            "Asia/Tel_Aviv", "Asia/Manila", "Asia/Kuala_Lumpur", "Asia/Ho_Chi_Minh"
-        ]),
-        ("Pacific", [
-            "Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu", "Pacific/Guam"
-        ]),
-        ("Australia", [
-            "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
-            "Australia/Perth", "Australia/Adelaide", "Australia/Darwin"
-        ]),
-        ("Africa", [
-            "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
-            "Africa/Casablanca", "Africa/Accra"
-        ])
+    private static let regionDisplayNames: [String: String] = [
+        "Africa": "Africa",
+        "America": "Americas",
+        "Antarctica": "Antarctica",
+        "Arctic": "Arctic",
+        "Asia": "Asia",
+        "Atlantic": "Atlantic",
+        "Australia": "Australia",
+        "Europe": "Europe",
+        "Indian": "Indian Ocean",
+        "Pacific": "Pacific",
     ]
+
+    private static let regionOrder: [String] = [
+        "Americas", "Europe", "Asia", "Pacific", "Australia",
+        "Africa", "Atlantic", "Indian Ocean", "Arctic", "Antarctica", "Other"
+    ]
+
+    private static let regionIdentifiers: [(String, [String])] = {
+        var grouped: [String: [String]] = [:]
+        for id in TimeZone.knownTimeZoneIdentifiers {
+            let prefix = id.split(separator: "/").first.map(String.init) ?? ""
+            let regionName = regionDisplayNames[prefix] ?? "Other"
+            grouped[regionName, default: []].append(id)
+        }
+        return regionOrder.compactMap { name in
+            guard let ids = grouped[name], !ids.isEmpty else { return nil }
+            let sorted = ids.sorted {
+                ClockConfig.displayName(for: $0) < ClockConfig.displayName(for: $1)
+            }
+            return (name, sorted)
+        }
+    }()
+
+    /// Maps a generic localized name (e.g. "Central European Time") to all
+    /// system-known abbreviations for timezones sharing that name (e.g. {"CET", "CEST"}).
+    private static let genericNameAbbreviations: [String: Set<String>] = {
+        var map: [String: Set<String>] = [:]
+        for (abbr, id) in TimeZone.abbreviationDictionary {
+            guard let tz = TimeZone(identifier: id),
+                  let generic = tz.localizedName(for: .generic, locale: .current) else { continue }
+            map[generic, default: []].insert(abbr)
+        }
+        return map
+    }()
 
     private static func makeTimezoneInfoBase(identifier: String) -> TimezoneInfoBase? {
         guard let tz = TimeZone(identifier: identifier) else { return nil }
         let displayName = ClockConfig.displayName(for: identifier)
+        let utcOffset = tz.gmtOffsetString
+        let localizedName = tz.localizedName(for: .generic, locale: .current) ?? ""
 
-        let seconds = tz.secondsFromGMT()
-        let hours = seconds / 3600
-        let minutes = abs(seconds % 3600) / 60
-        let utcOffset: String
-        if minutes == 0 {
-            utcOffset = hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
-        } else {
-            let sign = hours >= 0 ? "+" : "-"
-            utcOffset = "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
-        }
+        // Collect all known abbreviations for this timezone's zone group
+        let zoneAbbreviations = genericNameAbbreviations[localizedName] ?? []
+        let abbreviation = zoneAbbreviations.sorted().first ?? tz.abbreviation() ?? ""
 
-        return TimezoneInfoBase(displayName: displayName, utcOffset: utcOffset)
+        var searchParts = [displayName, identifier, localizedName, utcOffset]
+        searchParts.append(contentsOf: zoneAbbreviations)
+        let searchableText = searchParts.joined(separator: " ").lowercased()
+
+        return TimezoneInfoBase(
+            displayName: displayName,
+            utcOffset: utcOffset,
+            localizedName: localizedName,
+            abbreviation: abbreviation,
+            searchableText: searchableText
+        )
     }
 
     private static let timezoneInfoCache: [String: TimezoneInfoBase] = {
@@ -280,6 +341,9 @@ extension AppState {
                     identifier: id,
                     displayName: base.displayName,
                     utcOffset: base.utcOffset,
+                    localizedName: base.localizedName,
+                    abbreviation: base.abbreviation,
+                    searchableText: base.searchableText,
                     isFavorite: false
                 )
             }
@@ -297,41 +361,31 @@ extension AppState {
     }
     
     struct TimezoneInfo: Identifiable, Hashable {
-        let id: String // timezone identifier
+        let id: String
         let displayName: String
         let utcOffset: String
+        let localizedName: String
+        let abbreviation: String
+        let searchableText: String
         let isFavorite: Bool
 
-        init(identifier: String, displayName: String, utcOffset: String, isFavorite: Bool) {
+        init(identifier: String, displayName: String, utcOffset: String,
+             localizedName: String, abbreviation: String,
+             searchableText: String, isFavorite: Bool) {
             self.id = identifier
             self.displayName = displayName
             self.utcOffset = utcOffset
+            self.localizedName = localizedName
+            self.abbreviation = abbreviation
+            self.searchableText = searchableText
             self.isFavorite = isFavorite
-        }
-        
-        init(identifier: String, isFavorite: Bool = false) {
-            self.id = identifier
-            self.isFavorite = isFavorite
-            
-            let tz = TimeZone(identifier: identifier) ?? .current
-            
-            // Display name
-            self.displayName = ClockConfig.displayName(for: identifier)
-            
-            // UTC offset
-            let seconds = tz.secondsFromGMT()
-            let hours = seconds / 3600
-            let minutes = abs(seconds % 3600) / 60
-            
-            if minutes == 0 {
-                self.utcOffset = hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
-            } else {
-                let sign = hours >= 0 ? "+" : "-"
-                self.utcOffset = "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
-            }
         }
     }
     
+    private func matchesQuery(_ info: TimezoneInfo, query: String) -> Bool {
+        info.searchableText.contains(query)
+    }
+
     func getGroupedTimezones(searchQuery: String = "") -> [TimezoneGroup] {
         var groups: [TimezoneGroup] = []
         let query = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
@@ -342,21 +396,33 @@ extension AppState {
                     identifier: info.id,
                     displayName: info.displayName,
                     utcOffset: info.utcOffset,
+                    localizedName: info.localizedName,
+                    abbreviation: info.abbreviation,
+                    searchableText: info.searchableText,
                     isFavorite: isFavorite(info.id)
                 )
             }
         }
-        
+
+        func makeInfo(from base: TimezoneInfoBase, id: String, favorite: Bool) -> TimezoneInfo {
+            TimezoneInfo(
+                identifier: id,
+                displayName: base.displayName,
+                utcOffset: base.utcOffset,
+                localizedName: base.localizedName,
+                abbreviation: base.abbreviation,
+                searchableText: base.searchableText,
+                isFavorite: favorite
+            )
+        }
+
         // Check if query is an abbreviation
         if !query.isEmpty, let resolvedId = ClockConfig.timezoneIdentifier(fromAbbreviation: query) {
             if let base = AppState.timezoneInfoCache[resolvedId] ?? AppState.makeTimezoneInfoBase(identifier: resolvedId) {
-                let info = TimezoneInfo(
-                    identifier: resolvedId,
-                    displayName: base.displayName,
-                    utcOffset: base.utcOffset,
-                    isFavorite: isFavorite(resolvedId)
-                )
-                groups.append(TimezoneGroup(id: "quickadd", name: "Quick Add", timezones: [info]))
+                groups.append(TimezoneGroup(
+                    id: "quickadd", name: "Quick Add",
+                    timezones: [makeInfo(from: base, id: resolvedId, favorite: isFavorite(resolvedId))]
+                ))
             }
         }
         
@@ -364,19 +430,11 @@ extension AppState {
         if !favoriteTimezones.isEmpty {
             var favInfos = favoriteTimezones.compactMap { id -> TimezoneInfo? in
                 guard let base = AppState.timezoneInfoCache[id] ?? AppState.makeTimezoneInfoBase(identifier: id) else { return nil }
-                return TimezoneInfo(
-                    identifier: id,
-                    displayName: base.displayName,
-                    utcOffset: base.utcOffset,
-                    isFavorite: true
-                )
+                return makeInfo(from: base, id: id, favorite: true)
             }
             
             if !query.isEmpty {
-                favInfos = favInfos.filter { 
-                    $0.displayName.lowercased().contains(query) ||
-                    $0.id.lowercased().contains(query)
-                }
+                favInfos = favInfos.filter { matchesQuery($0, query: query) }
             }
             
             if !favInfos.isEmpty {
@@ -395,10 +453,7 @@ extension AppState {
             })
         } else {
             for group in AppState.baseTimezoneGroups {
-                let filtered = group.timezones.filter {
-                    $0.displayName.lowercased().contains(query) ||
-                    $0.id.lowercased().contains(query)
-                }
+                let filtered = group.timezones.filter { matchesQuery($0, query: query) }
                 if !filtered.isEmpty {
                     groups.append(
                         TimezoneGroup(

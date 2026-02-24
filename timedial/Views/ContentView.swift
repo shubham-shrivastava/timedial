@@ -13,7 +13,6 @@ struct ContentView: View {
     @StateObject private var loginManager = LoginItemManager()
     @EnvironmentObject private var appState: AppState
     @State private var isSettingsPresented = false
-    @State private var settingsPopoverId = UUID()
     
     var body: some View {
         GeometryReader { geometry in
@@ -26,7 +25,6 @@ struct ContentView: View {
                         }
                     },
                     onOpenSettings: {
-                        settingsPopoverId = UUID()
                         isSettingsPresented = true
                     }
                 )
@@ -42,13 +40,10 @@ struct ContentView: View {
             .background(.regularMaterial)
             .popover(isPresented: $isSettingsPresented, arrowEdge: .top) {
                 SettingsView(loginManager: loginManager)
-                    .id(settingsPopoverId)
             }
-            // Keyboard shortcuts
             .background {
                 Group {
                     Button("") {
-                        settingsPopoverId = UUID()
                         isSettingsPresented = true
                     }
                     .keyboardShortcut(",", modifiers: .command)
@@ -187,9 +182,6 @@ struct TimezoneClockCard: View {
                     viewModel.removeClock(id: config.id)
                 }
             },
-            onTimezoneChange: { newTz in
-                viewModel.updateClockTimezone(id: config.id, timezoneIdentifier: newTz)
-            },
             onDragDelta: { delta, isHour in
                 viewModel.addAngleDelta(delta, isHourHand: isHour)
             },
@@ -239,11 +231,7 @@ struct BottomToolbarView: View {
     @ViewBuilder
     private var addClockSection: some View {
         if appState.canAddMoreClocks {
-            AddClockPicker { timezoneId in
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                    viewModel.addClock(timezoneIdentifier: timezoneId)
-                }
-            }
+            AddClockPicker()
         } else {
             Text("Max 6 clocks")
                 .font(.system(size: 12))

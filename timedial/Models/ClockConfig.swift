@@ -66,24 +66,26 @@ extension ClockConfig: Codable {
         ClockConfig.displayName(for: timezoneIdentifier)
     }
     
+    /// Well-known IANA legacy names that have been superseded by modern city names.
+    private static let cityNameCorrections: [String: String] = [
+        "Calcutta": "Kolkata",
+        "Saigon": "Ho Chi Minh City",
+        "Rangoon": "Yangon",
+        "Dacca": "Dhaka",
+        "Katmandu": "Kathmandu",
+        "Pondicherry": "Puducherry",
+        "Ujung_Pandang": "Makassar",
+        "Thimbu": "Thimphu",
+        "Ashkhabad": "Ashgabat",
+        "Faeroe": "Faroe",
+        "Peking": "Beijing",
+    ]
+
     /// Shared utility: extract a human-readable city name from a timezone identifier.
     static func displayName(for identifier: String) -> String {
-        identifier.split(separator: "/").last
-            .map { String($0).replacingOccurrences(of: "_", with: " ") } ?? identifier
-    }
-    
-    // UTC offset string like "UTC-5" or "UTC+9"
-    var utcOffsetString: String {
-        let seconds = timezone.secondsFromGMT()
-        let hours = seconds / 3600
-        let minutes = abs(seconds % 3600) / 60
-        
-        if minutes == 0 {
-            return hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
-        } else {
-            let sign = hours >= 0 ? "+" : "-"
-            return "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
-        }
+        guard let raw = identifier.split(separator: "/").last.map(String.init) else { return identifier }
+        let spaced = raw.replacingOccurrences(of: "_", with: " ")
+        return cityNameCorrections[raw] ?? spaced
     }
     
     // Time difference from local timezone
@@ -107,38 +109,26 @@ extension ClockConfig: Codable {
     }
 }
 
-// MARK: - Timezone Abbreviation Mapping
+// MARK: - TimeZone Utilities
+
+extension TimeZone {
+    var gmtOffsetString: String {
+        let seconds = secondsFromGMT()
+        let hours = seconds / 3600
+        let minutes = abs(seconds % 3600) / 60
+        if minutes == 0 {
+            return hours >= 0 ? "GMT+\(hours)" : "GMT\(hours)"
+        } else {
+            let sign = hours >= 0 ? "+" : "-"
+            return "GMT\(sign)\(abs(hours)):\(String(format: "%02d", minutes))"
+        }
+    }
+}
+
+// MARK: - Timezone Abbreviation Lookup
 
 extension ClockConfig {
-    static let abbreviationMap: [String: String] = [
-        "PST": "America/Los_Angeles",
-        "PDT": "America/Los_Angeles",
-        "MST": "America/Denver",
-        "MDT": "America/Denver",
-        "CST": "America/Chicago",
-        "CDT": "America/Chicago",
-        "EST": "America/New_York",
-        "EDT": "America/New_York",
-        "GMT": "Europe/London",
-        "UTC": "UTC",
-        "BST": "Europe/London",
-        "CET": "Europe/Paris",
-        "CEST": "Europe/Paris",
-        "JST": "Asia/Tokyo",
-        "KST": "Asia/Seoul",
-        "IST": "Asia/Kolkata",
-        "AEST": "Australia/Sydney",
-        "AEDT": "Australia/Sydney",
-        "NZST": "Pacific/Auckland",
-        "NZDT": "Pacific/Auckland",
-        "HKT": "Asia/Hong_Kong",
-        "SGT": "Asia/Singapore",
-        "GST": "Asia/Dubai",
-        "PET": "America/Lima",
-    ]
-    
     static func timezoneIdentifier(fromAbbreviation abbr: String) -> String? {
-        return abbreviationMap[abbr.uppercased()]
+        TimeZone.abbreviationDictionary[abbr.uppercased()]
     }
-
 }
